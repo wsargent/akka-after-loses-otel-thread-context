@@ -4,12 +4,13 @@ import io.opentelemetry.api.GlobalOpenTelemetry
 import io.opentelemetry.api.trace.Span
 import io.opentelemetry.context.Context
 import org.apache.pekko.Done
-import org.apache.pekko.actor.ActorSystem
+import org.apache.pekko.actor.{ActorSystem, Scheduler}
 import org.slf4j.LoggerFactory
 
 import scala.language.reflectiveCalls
-import scala.concurrent.duration.DurationInt
-import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
+import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutor, Future, Promise}
+import scala.util.control.NonFatal
 
 object Main {
   private val logger = LoggerFactory.getLogger(getClass)
@@ -34,13 +35,37 @@ object Main {
     Await.result(f, 30.seconds)
   }
 
+  def after[T](duration: FiniteDuration, using: Scheduler)(value: => Future[T])(implicit ec: ExecutionContext): Future[T] = {
+    val p = Promise[T]()
+    okayScheduleOnce(duration, using) {
+      p.completeWith {
+        try value
+        catch {
+          case NonFatal(t) => Future.failed(t)
+        }
+      }
+    }
+    p.future
+  }
+
+  def okayScheduleOnce(delay: FiniteDuration, using: Scheduler)(f: => Unit)(
+    implicit executor: ExecutionContext) = {
+    val context = Context.current()
+    using.scheduleOnce(delay, context.wrap(new Runnable { override def run(): Unit = f }))
+  }
+
+  def problematicScheduleOnce(delay: FiniteDuration, using: Scheduler)(f: => Unit)(
+    implicit executor: ExecutionContext) = {
+    using.scheduleOnce(delay, new Runnable { override def run(): Unit = f })
+  }
+
   def operation(mode: String)(implicit actorSystem: ActorSystem): Future[Done] = {
     traceSync(s"root $mode") {
       val expectedSpan = Span.current()
       logger.info(s"mode: We expect ${expectedSpan}")
       val afterExecutionContext = defineExecutionContext(mode)
 
-      org.apache.pekko.pattern.after(1.second, actorSystem.scheduler) {
+      after(1.second, actorSystem.scheduler) {
         val actualSpan = Span.current()
         Future.successful {
           if (!expectedSpan.equals(actualSpan)) {
@@ -71,7 +96,7 @@ object Main {
   }
 
   def defineExecutionContext(mode: String)(implicit system: ActorSystem): ExecutionContext = {
-    val dispatcher = system.classicSystem.dispatcher
+    val dispatcher: ExecutionContextExecutor = system.classicSystem.dispatcher
 
     mode match {
       case "wrapping" =>
