@@ -10,20 +10,20 @@
 
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%-5r %highlight(%-5level) trace_id=%mdc{trace_id} span_id=%mdc{span_id} [%thread] %logger - %message%n%xException{10}</pattern>
+            <pattern>%-5r %highlight(%-5level) [%thread] %logger - %message%n%xException{10}</pattern>
         </encoder>
     </appender>
 
     <appender name="FILE" class="ch.qos.logback.core.FileAppender">
-        <file>logs/play.log</file>
+        <file>logs/application.log</file>
         <encoder>
-            <pattern>%date{H:mm:ss.SSS} %-5level trace_id=%mdc{trace_id} span_id=%mdc{span_id} [%thread]: %message%n%ex</pattern>
+            <pattern>%date{H:mm:ss.SSS} %-5level [%thread] %logger : %message%n%ex</pattern>
         </encoder>
     </appender>
 
-    <logger name="io.opentelemetry" level="INFO" />
+    <logger name="io.opentelemetry" level="TRACE" />
+    <logger name="io.opentelemetry.javaagent.tooling.field.VirtualFieldFindRewriter" level="OFF" />
     <logger name="io.opentelemetry.api.internal.ApiUsageLogger" level="TRACE" />
-    <logger name="services" level="DEBUG" />
 
     <root level="INFO">
         <appender-ref ref="STDOUT" />

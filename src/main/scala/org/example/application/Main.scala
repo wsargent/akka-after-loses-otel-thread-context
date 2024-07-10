@@ -22,7 +22,13 @@ object Main {
   def main(args: Array[String]): Unit = {
     implicit val actorSystem = ActorSystem("example")
 
+    Thread.sleep(1000)
+    for (i <- 1 to 10) {
+      logger.info("")
+    }
+
     implicit val ec = ExecutionContext.global
+    val operation = futureOperation _
     val f = for {
       _ <- operation("wrapping")
       _ <- operation("global")
@@ -34,10 +40,32 @@ object Main {
     Await.result(f, 30.seconds)
   }
 
-  def operation(mode: String)(implicit actorSystem: ActorSystem): Future[Done] = {
+  def futureOperation(mode: String)(implicit actorSystem: ActorSystem): Future[Done] = {
     traceSync(s"root $mode") {
       val expectedSpan = Span.current()
-      logger.info(s"mode: We expect ${expectedSpan}")
+      logger.info(s"$mode: We expect ${expectedSpan}, sleeping for 1000")
+      Thread.sleep(1000)
+      val futureExecutionContext = defineExecutionContext(mode)
+      logger.info(s"$mode: using futureExecutionContext $futureExecutionContext")
+
+      Future {
+        Thread.sleep(10000)
+        val actualSpan = Span.current()
+        if (!expectedSpan.equals(actualSpan)) {
+          logger.error(s"$mode: Unexpected $actualSpan")
+        } else {
+          logger.info(s"$mode: Reached future with $actualSpan")
+        }
+        Done
+      }(futureExecutionContext)
+    }
+  }
+
+
+  def afterOperation(mode: String)(implicit actorSystem: ActorSystem): Future[Done] = {
+    traceSync(s"root $mode") {
+      val expectedSpan = Span.current()
+      logger.info(s"$mode: We expect ${expectedSpan}")
       val afterExecutionContext = defineExecutionContext(mode)
 
       org.apache.pekko.pattern.after(1.second, actorSystem.scheduler) {
